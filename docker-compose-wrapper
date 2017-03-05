@@ -1,0 +1,250 @@
+#!/bin/bash
+
+# configuration
+compose="/usr/local/bin/docker-compose"
+
+# ---------------------------------------------------------------
+# Function for calling the docker-compose binary
+# ---------------------------------------------------------------
+# $@ - Parameters for passthrough to docker-compose
+# ---------------------------------------------------------------
+function compose() {
+    $compose -f "$composeFile" "$@"
+}
+
+# ---------------------------------------------------------------
+# Function for removing all containers and images
+# ---------------------------------------------------------------
+function cleanup() {
+    docker rm -f $(docker ps -a -q)
+    docker rmi -f $(docker images -q)
+}
+
+# ---------------------------------------------------------------
+# Function for editing the current compose file in vi
+# ---------------------------------------------------------------
+function edit() {
+    vi "$composeFile"
+}
+
+# ---------------------------------------------------------------
+# Function for executing a command in a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file
+# $2 - Command to execute including parameters
+# ---------------------------------------------------------------
+function execute() {
+    
+    local composeName="$2"
+    local command="$(echo $@ | awk '{$1="";$2="";print $0}')"
+    local execFlags="-i"
+
+    # is command executed via terminal?
+    if [ -t 1 ]
+    then
+        execFlags="${execFlags}t"
+    fi    
+    
+    docker exec $execFlags $(getContainerId $composeName) sh -c "$command"
+}
+
+# ---------------------------------------------------------------
+# Function for removing unused docker containers and images
+# ---------------------------------------------------------------
+function gc() {
+    
+    if [ "$1" != "" ]
+    then
+        gcImage="$1"
+    else
+        gcImage="spotify/docker-gc"
+    fi
+
+    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /etc:/etc "$gcImage"
+}
+
+# ---------------------------------------------------------------
+# Function for getting the ID of a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file
+# ---------------------------------------------------------------
+function getContainerId() {
+    local composeName="$1"
+    if [ "$composeName" != "" ]
+    then
+        local containerId=$(compose ps -q $composeName)
+    fi
+
+    echo $containerId
+}
+
+# ---------------------------------------------------------------
+# Function for getting the name of a container
+# ---------------------------------------------------------------
+# $1 - Container ID
+# ---------------------------------------------------------------
+function getContainerName() {
+    local containerId="$1"
+    if [ "$containerId" != "" ]
+    then
+        local containerName=$(docker ps --format '{{.Names}}' -f id=$containerId)
+    fi
+
+    echo $containerName
+}
+
+# ---------------------------------------------------------------
+# Function for getting the names of all running containers
+# ---------------------------------------------------------------
+function getRunningContainerNames() {
+    compose "ps" -q | while read containerId
+    do
+        echo $(getContainerName $containerId)
+    done
+}
+
+# ---------------------------------------------------------------
+# Function for inspecting a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file
+# ---------------------------------------------------------------
+function inspect() {
+    docker inspect $(getContainerId $1) | more
+}
+
+# ---------------------------------------------------------------
+# Function for opening a shell of a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file 
+# ---------------------------------------------------------------
+function shell() {
+    docker exec -it $(getContainerId $1) bash
+}
+
+# ---------------------------------------------------------------
+# Function for showing the current compose file in pager
+# ---------------------------------------------------------------
+function show() {
+    cat "$composeFile" | more
+}
+
+# ---------------------------------------------------------------
+# Function for printing out system usage statistics of containers
+# ---------------------------------------------------------------
+function stats() {
+
+    local composeName="$1"
+
+    local containerNames=""
+    if [ "$composeName" != "" ]
+    then
+        containerNames=$(getContainerName $(getContainerId $composeName))
+    else
+        containerNames=$(getRunningContainerNames)
+    fi
+
+    docker stats $containerNames
+}
+
+# ---------------------------------------------------------------
+# Function for printing out the status of container
+# ---------------------------------------------------------------
+function status() {
+
+    local composeName="$1"
+    if [ "$composeName" != "" ]
+    then
+        docker "ps" -f id=$(getContainerId $composeName)
+    else
+        compose "ps"
+    fi
+}
+
+# ---------------------------------------------------------------
+# Function for renewing a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file (empty: all)
+# ---------------------------------------------------------------
+function renew() {
+    compose "stop" $1
+    compose "rm" --force $1
+    compose "up" -d $1
+}
+
+# ---------------------------------------------------------------
+# Function for updating a container
+# ---------------------------------------------------------------
+# $1 - Container name in compose file (empty: all)
+# ---------------------------------------------------------------
+function update() {
+    compose "pull" $1
+    renew $1
+}
+
+# ---------------------------------------------------------------
+# Function for printing the usage of this script
+# ---------------------------------------------------------------
+function composeUsage() {
+    cat <<USAGE
+
+Convenience commands (parameters in brackets are optional):
+  cleanup            Removes all docker containers and images
+  edit               Edit the current compose file in vi
+  exec <name> <cmd>  Executes a command in a container
+  gc     [<name>]    Removes unused docker containers and images
+  inspect <name>     Show all container information in JSON format
+  shell   <name>     Opens a bash terminal in a container
+  show               Shows the current compose file
+  stats  [<name>]    Print system usage statistics for containers
+  status [<name>]    See 'ps' command
+  renew  [<name>]    Renews containers by stopping, removing and creating them
+  update [<name>]    Updates containers by pulling, stopping, removing and creating them
+USAGE
+}
+
+case "$1" in
+    cleanup)
+        cleanup
+    ;;
+    edit)
+        edit
+    ;;
+    exec)
+        execute "$@"
+    ;;
+    gc)
+        gc "$2"
+    ;;
+    inspect)
+        inspect "$2"
+    ;;
+    shell)
+        shell "$2"
+    ;;
+    show)
+        show
+    ;;
+    stats)
+        stats "$2"
+    ;;
+    status)
+        status "$2"
+    ;;
+    renew)
+        renew "$2"
+    ;;
+    update)
+        update "$2"
+    ;;
+    *)
+        # passthrough parameters to compose script
+        compose "$@"
+
+        # print usage if no parameter is set
+        if [ "$1" == "" ]
+        then
+            composeUsage
+        fi
+    ;;
+esac
+

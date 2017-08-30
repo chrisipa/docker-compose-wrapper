@@ -28,7 +28,7 @@ Installation
 * Download docker-compose-wrapper script to `/usr/local/bin` folder:
 
    ```
-   sudo wget https://raw.githubusercontent.com/chrisipa/docker-compose-wrapper/docker-compose-wrapper -O /usr/local/bin
+   sudo wget https://raw.githubusercontent.com/chrisipa/docker-compose-wrapper/master/docker-compose-wrapper -O /usr/local/bin/docker-compose-wrapper
    ```
    
 * Make docker-compose-wrapper script executable:   

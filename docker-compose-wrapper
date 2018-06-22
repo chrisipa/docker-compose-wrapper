@@ -118,7 +118,17 @@ function inspect() {
 # $1 - Container name in compose file 
 # ---------------------------------------------------------------
 function shell() {
-    docker exec -it $(getContainerId $1) bash
+
+    local columns="$(tput cols)"
+    local lines="$(tput lines)"
+    local containerId="$(getContainerId $1)"
+
+    docker exec -e COLUMNS="$columns" -e LINES="$lines" -it "$containerId" /bin/bash
+
+    if [ "$?" != "0" ]
+    then
+        docker exec -e COLUMNS="$columns" -e LINES="$lines" -it "$containerId" /bin/sh
+    fi
 }
 
 # ---------------------------------------------------------------
